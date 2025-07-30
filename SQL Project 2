@@ -1,0 +1,45 @@
+SELECT 
+    a.product_name, 
+    a.Srs_Item_code, 
+    a.abc_item_code, 
+    a.beacon_item_code, 
+
+    -- ABC pricing (highest per tenant)
+    b.unit_of_measure AS ABC_UOM, 
+    b.unit_price AS ABC_Price, 
+    b.tenant AS ABC_Tenant, 
+
+    -- Beacon pricing
+    f.value::NUMBER AS Beacon_Price,
+    f.key::STRING AS Beacon_UOM,
+    f.tenant AS Beacon_Tenant
+
+FROM VERTEX_DB1.DISTRIBUTOR_MANUAL.DISTRIBUTOR_MAPPING_FINAL a
+
+-- ABC Price join: filter to highest price per item+tenant
+LEFT JOIN (
+    SELECT *
+    FROM (
+        SELECT *,
+               ROW_NUMBER() OVER (
+                   PARTITION BY orig_item_number, tenant
+                   ORDER BY unit_price DESC
+               ) AS rn
+        FROM ARCH_PREP.ARCH_DBT_DISTRIBUTOR_ABC.STG_DISTRIBUTOR_ABC__PRICE
+    )
+    WHERE rn = 1
+) b
+    ON a.abc_item_code = b.orig_item_number
+
+-- Beacon price join with tenant filtering
+LEFT JOIN (
+    SELECT 
+        bp.orig_item_number,
+        bp.tenant,
+        flattened.key,
+        flattened.value
+    FROM ARCH_PREP.ARCH_DBT_DISTRIBUTOR_BEACON.STG_DISTRIBUTOR_BEACON__PRICE bp,
+         LATERAL FLATTEN(INPUT => PARSE_JSON(bp.prices)) AS flattened
+) f
+    ON a.beacon_item_code = f.orig_item_number
+   AND b.tenant = f.tenant
