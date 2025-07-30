@@ -1,0 +1,115 @@
+import snowflake.snowpark as snowpark
+from snowflake.snowpark.functions import col
+from difflib import SequenceMatcher
+import pandas as pd
+
+def main(session: snowpark.Session): 
+    # Set timeout to avoid long-running errors
+    session.sql("ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = 7200").collect()
+
+    # Load unprocessed rows from all tables
+    srs_df = session.sql("""
+        SELECT * 
+        FROM SRS
+        WHERE PROCESSED = FALSE
+        LIMIT 5000  -- Adjust batch size as needed
+    """).to_pandas()
+
+    abc_df = session.sql("""
+        SELECT * 
+        FROM ABC
+        WHERE PROCESSED = FALSE
+    """).to_pandas()
+
+    beacon_df = session.sql("""
+        SELECT * 
+        FROM BEACON
+        WHERE PROCESSED = FALSE
+    """).to_pandas()
+
+    # Capitalize column names for consistency
+    srs_df.columns = srs_df.columns.str.strip().str.upper()
+    abc_df.columns = abc_df.columns.str.strip().str.upper()
+    beacon_df.columns = beacon_df.columns.str.strip().str.upper()
+
+    # Match percentage function
+    def get_match_percentage(a, b):
+        return SequenceMatcher(None, str(a).lower(), str(b).lower()).ratio() * 100
+
+    # Process batch across all tables
+    def process_batch(srs_batch, abc_df, beacon_df):
+        batch_mapping = []
+        for _, srs_row in srs_batch.iterrows():
+            best_match = {
+                "ABC": {"row": None, "score": 0},
+                "BEACON": {"row": None, "score": 0}
+            }
+
+            # Compare SRS to ABC
+            for _, abc_row in abc_df.iterrows():
+                name_match = get_match_percentage(srs_row['PRODUCT_NAME'], abc_row['ITEM_DESCRIPTION'])
+                color_match = get_match_percentage(srs_row['SELECTED_OPTION'], abc_row['COLOR__NAME'])
+                item_code_match = get_match_percentage(srs_row['VARIANT_CODE'], abc_row['ORIG_ITEM_NUMBER'])
+                overall_score = (name_match * 0.8) + (color_match * 0.15) + (item_code_match * 0.05)
+
+                if overall_score > best_match["ABC"]["score"]:
+                    best_match["ABC"] = {"row": abc_row, "score": overall_score}
+
+            # Compare SRS to Beacon
+            for _, beacon_row in beacon_df.iterrows():
+                name_match = get_match_percentage(srs_row['PRODUCT_NAME'], beacon_row['BASE_PRODUCT_NAME'])
+                color_match = get_match_percentage(srs_row['SELECTED_OPTION'], beacon_row['COLOR'])
+                item_code_match = get_match_percentage(srs_row['VARIANT_CODE'], beacon_row['ORIG_ITEM_NUMBER'])
+                overall_score = (name_match * 0.8) + (color_match * 0.15) + (item_code_match * 0.05)
+
+                if overall_score > best_match["BEACON"]["score"]:
+                    best_match["BEACON"] = {"row": beacon_row, "score": overall_score}
+
+            # Append results for SRS
+            batch_mapping.append({
+                'SRS_PRODUCT_NAME': srs_row['PRODUCT_NAME'],
+                'SRS_COLOR': srs_row['SELECTED_OPTION'],
+                'SRS_VARIANT_CODE': srs_row['VARIANT_CODE'],
+                'ABC_ITEM_DESCRIPTION': best_match["ABC"]["row"]['ITEM_DESCRIPTION'] if best_match["ABC"]["row"] is not None else None,
+                'ABC_COLOR__NAME': best_match["ABC"]["row"]['COLOR__NAME'] if best_match["ABC"]["row"] is not None else None,
+                'ABC_ORIG_ITEM_NUMBER': best_match["ABC"]["row"]['ORIG_ITEM_NUMBER'] if best_match["ABC"]["row"] is not None else None,
+                'ABC_MATCH_PERCENTAGE': round(best_match["ABC"]["score"], 2) if best_match["ABC"]["row"] is not None else None,
+                'BEACON_BASE_PRODUCT_NAME': best_match["BEACON"]["row"]['BASE_PRODUCT_NAME'] if best_match["BEACON"]["row"] is not None else None,
+                'BEACON_COLOR': best_match["BEACON"]["row"]['COLOR'] if best_match["BEACON"]["row"] is not None else None,
+                'BEACON_ORIG_ITEM_NUMBER': best_match["BEACON"]["row"]['ORIG_ITEM_NUMBER'] if best_match["BEACON"]["row"] is not None else None,
+                'BEACON_MATCH_PERCENTAGE': round(best_match["BEACON"]["score"], 2) if best_match["BEACON"]["row"] is not None else None
+            })
+        return batch_mapping
+
+    # Process the batch
+    batch_results = process_batch(srs_df, abc_df, beacon_df)
+
+    # Write results to Snowflake
+    results_df = pd.DataFrame(batch_results)
+    session.write_pandas(results_df, "MAPPED_PRODUCTS", overwrite=False)
+
+    # Update processed rows
+    processed_srs_ids = tuple(srs_df['VARIANT_CODE'].unique())
+    processed_abc_ids = tuple(results_df['ABC_ORIG_ITEM_NUMBER'].dropna().unique())
+    processed_beacon_ids = tuple(results_df['BEACON_ORIG_ITEM_NUMBER'].dropna().unique())
+
+    if processed_srs_ids:
+        session.sql(f"""
+            UPDATE SRS
+            SET PROCESSED = TRUE
+            WHERE VARIANT_CODE IN {processed_srs_ids}
+        """).collect()
+
+    if processed_abc_ids:
+        session.sql(f"""
+            UPDATE ABC
+            SET PROCESSED = TRUE
+            WHERE ORIG_ITEM_NUMBER IN {processed_abc_ids}
+        """).collect()
+
+    if processed_beacon_ids:
+        session.sql(f"""
+            UPDATE BEACON
+            SET PROCESSED = TRUE
+            WHERE ORIG_ITEM_NUMBER IN {processed_beacon_ids}
+        """).collect()
