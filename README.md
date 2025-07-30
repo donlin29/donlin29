@@ -1,16 +1,47 @@
-## Hi there 👋
+# 👋 Hi, I'm [Your Name]
 
-<!--
-**donlin29/donlin29** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
+🎯 **Data Analytics Professional** with 4+ years of experience designing scalable data models, building automated data pipelines, and delivering business-impacting dashboards. I specialize in translating raw data into actionable insights that drive decision-making across marketing, operations, and strategy.
 
-Here are some ideas to get you started:
+---
 
-- 🔭 I’m currently working on ...
-- 🌱 I’m currently learning ...
-- 👯 I’m looking to collaborate on ...
-- 🤔 I’m looking for help with ...
-- 💬 Ask me about ...
-- 📫 How to reach me: ...
-- 😄 Pronouns: ...
-- ⚡ Fun fact: ...
--->
+## 🚀 What I Do
+
+- ✅ Build reverse ETL workflows that bridge warehouse data with business tools (CRM, marketing, etc.)
+- 📊 Develop interactive, insightful dashboards using Tableau and Sigma
+- 🛠️ Design robust data pipelines using **SQL**, **DBT**, **Snowflake**, and **Fivetran**
+- 🔁 Automate complex transformations using **Alteryx**, **Airflow**, and Python
+- 📈 Define and track key performance metrics for cross-functional teams
+- 🤝 Partner with stakeholders to turn questions into measurable outcomes
+
+---
+
+## 🧰 Tools & Technologies
+
+| Category        | Tools & Platforms                                                                 |
+|-----------------|------------------------------------------------------------------------------------|
+| **Languages**   | SQL, Python, dbt                                                                   |
+| **Data Warehousing** | Snowflake, BigQuery, Redshift                                                   |
+| **ETL/ELT**     | Fivetran, dbt, Airflow, Alteryx                                                    |
+| **BI/Visualization** | Tableau, Sigma, Google Sheets (Data Connector)                                |
+| **Workflow & Dev** | Git/GitHub, VS Code, Jupyter, Google Apps Script                                 |
+
+---
+
+## 🌱 Currently Learning
+
+- Leveraging LLMs for data transformation and quality checks
+- Streamlit & Slackbots for lightweight data applications
+- Data lakehouse architectures (e.g., Iceberg tables)
+
+---
+
+## 📫 Let's Connect
+
+- 💼 [LinkedIn](www.linkedin.com/in/don-lincoln-a67511150)
+- 📧 [Email](don.lincoln9@gmail.com)
+- 🧠 Check out some of my projects below ↓
+
+---
+
+Thanks for stopping by!
+
