@@ -20,10 +20,10 @@
 | Category        | Tools & Platforms                                                                 |
 |-----------------|------------------------------------------------------------------------------------|
 | **Languages**   | SQL, Python, dbt                                                                   |
-| **Data Warehousing** | Snowflake, BigQuery, Redshift                                                   |
-| **ETL/ELT**     | Fivetran, dbt, Airflow, Alteryx                                                    |
-| **BI/Visualization** | Tableau, Sigma, Google Sheets (Data Connector)                                |
-| **Workflow & Dev** | Git/GitHub, VS Code, Jupyter, Google Apps Script                                 |
+| **Data Warehousing** | Snowflake, BigQuery,                                                   |
+| **ETL/ELT**     | Fivetran, dbt, Alteryx                                                    |
+| **BI/Visualization** | Tableau, Sigma, Power BI                                |
+| **Workflow & Dev** | Git/GitHub, VS Code, Google Apps Script                                 |
 
 ---
 
