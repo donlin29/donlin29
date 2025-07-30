@@ -1,0 +1,152 @@
+WITH SRS_HISTORY AS (
+    SELECT 
+        Itemcode,
+        branchCD,
+        'SRS' AS Distributor,
+        dbt_updated_at,
+        CAST(Price AS DECIMAL(10,2)) AS Price,
+        CASE cust_code
+            WHEN 'MER505' THEN 'MHI_ROOFING'
+            WHEN 'FIN110' THEN 'FINDLAY_ROOFING'
+            WHEN 'KAI112' THEN 'KAIROS'
+            WHEN 'DKR10153' THEN 'DON_KENNEDY_ROOFING'
+            WHEN 'SMO' THEN 'VICTORS_HOME_SOLUTIONS'
+            WHEN 'S057850' THEN 'MONARCH_ROOFING'
+            WHEN 'MCH105' THEN 'MCHALE'
+            WHEN '7797' THEN 'JP_CARROLL_ROOFING'
+            WHEN 'S042917' THEN 'EUSTIS_ROOFING'
+            WHEN 'BAC10140' THEN 'BACHMANS_ROOFING'
+            WHEN 'SO23483' THEN 'KING_QUALITY'
+            WHEN 'PYR10164' THEN 'PYRAMID_ROOFING'
+            WHEN '704400' THEN 'BLISS_ROOFING'
+            WHEN 'ROG228' THEN 'ROGERS_ROOFING'
+            WHEN 'S047380' THEN 'CHERRY_ROOFING_AND_SIDING'
+            ELSE NULL
+        END AS Tenant
+    FROM ARCH_RAW.SNAPSHOTS.SRS_PRODUCT_PRICE_SNAPSHOT
+),
+SRS AS (
+    SELECT *, 
+        LAG(Price) OVER (PARTITION BY Itemcode, branchCD, Tenant ORDER BY dbt_updated_at) AS Prev_Price
+    FROM SRS_HISTORY
+),
+SRS_LAST_CHANGE AS (
+    SELECT 
+        CONCAT(Itemcode, '-', branchCD, '-', 'SRS') AS Primary,
+        Itemcode, branchCD, Tenant, Distributor, dbt_updated_at, Price
+    FROM SRS
+    WHERE Price != Prev_Price
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY Itemcode, branchCD, Tenant ORDER BY dbt_updated_at DESC) = 1
+),
+
+BEACON_HISTORY AS (
+    SELECT 
+        bp.orig_item_number,
+        bp.orig_account_id,
+        'Beacon' AS Distributor,
+        bp.dbt_updated_at,
+        CAST(TRY_PARSE_JSON(bp.prices):PC AS DECIMAL(10,2)) AS Price,
+        bp.tenant AS Tenant
+    FROM ARCH_RAW.SNAPSHOTS.STG_DISTRIBUTOR_BEACON__PRICE_SNAPSHOT bp
+),
+BEACON AS (
+    SELECT *, 
+        LAG(Price) OVER (PARTITION BY orig_item_number, orig_account_id, tenant ORDER BY dbt_updated_at) AS Prev_Price
+    FROM BEACON_HISTORY
+),
+BEACON_LAST_CHANGE AS (
+    SELECT 
+        CONCAT(orig_item_number, '-', orig_account_id, '-', 'Beacon') AS Primary,
+        orig_item_number, orig_account_id, Tenant, Distributor, dbt_updated_at, Price
+    FROM BEACON
+    WHERE Price != Prev_Price
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY orig_item_number, orig_account_id, tenant ORDER BY dbt_updated_at DESC) = 1
+),
+
+ABC_DAILY_PRICES AS (
+    SELECT
+        orig_item_number,
+        orig_branch_number,
+        'ABC' AS Distributor,
+        DATE_TRUNC('DAY', dbt_updated_at) AS price_date,
+        MAX(CAST(Unit_Price AS DECIMAL(10,2))) AS Price,
+        tenant
+    FROM ARCH_RAW.SNAPSHOTS.STG_DISTRIBUTOR_ABC__PRICE_SNAPSHOT
+    GROUP BY orig_item_number, orig_branch_number, tenant, DATE_TRUNC('DAY', dbt_updated_at)
+),
+ABC_FINAL AS (
+    SELECT *, 
+        LAG(Price) OVER (PARTITION BY orig_item_number, orig_branch_number, tenant ORDER BY price_date) AS Prev_Price
+    FROM ABC_DAILY_PRICES
+),
+ABC_LAST_CHANGE AS (
+    SELECT 
+        CONCAT(orig_item_number, '-', orig_branch_number, '-', 'ABC') AS Primary,
+        orig_item_number, orig_branch_number, tenant, Distributor, price_date AS dbt_updated_at, Price
+    FROM ABC_FINAL
+    WHERE Price != Prev_Price
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY orig_item_number, orig_branch_number, tenant ORDER BY price_date DESC) = 1
+),
+
+LastChanges AS (
+    SELECT * FROM SRS_LAST_CHANGE
+    UNION ALL
+    SELECT * FROM BEACON_LAST_CHANGE
+    UNION ALL
+    SELECT * FROM ABC_LAST_CHANGE
+),
+
+-- Main Query
+Combined AS (
+    SELECT 
+        c.Primary, c.Distributor, c.Branch, m.display_name AS Item_Name, 
+        c.Part_Number, c.Price, c.Prev_Price, c.Flag_Price_Change,
+        lc.dbt_updated_at AS Last_Price_Change_Date,
+        m.Child_Tenant AS Tenant, 
+        TRY_PARSE_JSON(m.Primary_Vendor):vendorId::STRING AS VendorID,
+        m.Orig_ID AS MaterialID,
+        CAST(TRY_PARSE_JSON(m.Primary_Vendor):cost AS DECIMAL(10,2)) AS Current_PB_Price 
+    FROM (
+        SELECT 
+            CONCAT(Itemcode, '-', branchCD, '-', 'SRS') AS Primary,
+            'SRS' AS Distributor,
+            branchCD AS Branch,
+            Itemcode AS Part_Number,
+            Price,
+            Prev_Price,
+            CASE WHEN Price = Prev_Price THEN 0 ELSE 1 END AS Flag_Price_Change,
+            Tenant
+        FROM SRS
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY Itemcode, branchCD, Tenant ORDER BY dbt_updated_at DESC) = 1
+        UNION ALL
+        SELECT 
+            CONCAT(orig_item_number, '-', orig_account_id, '-', 'Beacon'),
+            'Beacon',
+            orig_account_id,
+            orig_item_number,
+            Price,
+            Prev_Price,
+            CASE WHEN Price = Prev_Price THEN 0 ELSE 1 END,
+            tenant
+        FROM BEACON
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY orig_item_number, orig_account_id, tenant ORDER BY dbt_updated_at DESC) = 1
+        UNION ALL
+        SELECT 
+            CONCAT(orig_item_number, '-', orig_branch_number, '-', 'ABC'),
+            'ABC',
+            orig_branch_number,
+            orig_item_number,
+            Price,
+            Prev_Price,
+            CASE WHEN Price = Prev_Price THEN 0 ELSE 1 END,
+            tenant
+        FROM ABC_FINAL
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY orig_item_number, orig_branch_number, tenant ORDER BY price_date DESC) = 1
+    ) c
+    LEFT JOIN LastChanges lc ON c.Primary = lc.Primary
+    JOIN ARCH_PREP.ARCH_DBT_SERVICE_TITAN.STG_SERVICE_TITAN__MATERIALS m
+        ON c.Tenant = m.Child_Tenant 
+        AND c.Part_Number = TRY_PARSE_JSON(m.Primary_Vendor):vendorPart::STRING
+)
+
+SELECT * FROM Combined;
