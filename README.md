@@ -1,4 +1,4 @@
-# 👋 Hi, I'm [Your Name]
+# 👋 Hi, I'm Don Lincoln
 
 🎯 **Data Analytics Professional** with 4+ years of experience designing scalable data models, building automated data pipelines, and delivering business-impacting dashboards. I specialize in translating raw data into actionable insights that drive decision-making across marketing, operations, and strategy.
 
